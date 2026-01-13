@@ -2,19 +2,55 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use console::style;
+
 use super::parser::parse_ini_file;
 use super::profile::Profile;
+use crate::cache::{CachedProfile, ProfileCache};
 
 /// Scan ~/.aws/ directory for all profiles across all credentials/config files
 pub fn scan_profiles() -> std::io::Result<Vec<Profile>> {
+    scan_profiles_internal(false)
+}
+
+/// Scan ~/.aws/ directory with verbose output
+pub fn scan_profiles_verbose() -> std::io::Result<Vec<Profile>> {
+    scan_profiles_internal(true)
+}
+
+fn scan_profiles_internal(verbose: bool) -> std::io::Result<Vec<Profile>> {
     let aws_dir = get_aws_dir()?;
+
+    if verbose {
+        eprintln!(
+            "{} Scanning AWS directory: {}",
+            style("[verbose]").dim(),
+            style(aws_dir.display()).cyan()
+        );
+    }
 
     if !aws_dir.exists() {
         return Ok(Vec::new());
     }
 
+    // Try to use cache
+    if let Some(cache) = ProfileCache::load() {
+        if cache.is_valid(&aws_dir) {
+            if verbose {
+                eprintln!(
+                    "{} Using cached profiles ({} profiles)",
+                    style("[verbose]").dim(),
+                    cache.profiles.len()
+                );
+            }
+            return Ok(cache.profiles.into_iter().map(Profile::from).collect());
+        } else if verbose {
+            eprintln!("{} Cache invalid, rescanning", style("[verbose]").dim());
+        }
+    }
+
     // Step 1: Scan ALL credentials files and build a map of raw_name -> credentials_file
-    let credentials_map = build_credentials_map(&aws_dir)?;
+    let credentials_map = build_credentials_map(&aws_dir, verbose)?;
 
     // Step 2: Scan config files and build profiles
     let mut profiles: HashMap<String, Profile> = HashMap::new();
@@ -33,6 +69,13 @@ pub fn scan_profiles() -> std::io::Result<Vec<Profile>> {
 
         // Process config files
         if filename == "config" || filename.starts_with("config_") {
+            if verbose {
+                eprintln!(
+                    "{} Processing config file: {}",
+                    style("[verbose]").dim(),
+                    style(path.display()).cyan()
+                );
+            }
             let project = extract_project_name(filename, "config");
             process_config_file(&path, project, &credentials_map, &mut profiles)?;
         }
@@ -55,6 +98,21 @@ pub fn scan_profiles() -> std::io::Result<Vec<Profile>> {
 
     let mut result: Vec<Profile> = profiles.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
+
+    if verbose {
+        eprintln!(
+            "{} Found {} profiles",
+            style("[verbose]").dim(),
+            style(result.len()).cyan()
+        );
+    }
+
+    // Save to cache
+    let cached_profiles: Vec<CachedProfile> = result.iter().map(CachedProfile::from).collect();
+    if let Ok(cache) = ProfileCache::create(cached_profiles, &aws_dir) {
+        let _ = cache.save(); // Ignore cache save errors
+    }
+
     Ok(result)
 }
 
@@ -65,7 +123,10 @@ struct CredentialInfo {
 }
 
 /// Build a map of raw profile name -> credentials file info
-fn build_credentials_map(aws_dir: &PathBuf) -> std::io::Result<HashMap<String, CredentialInfo>> {
+fn build_credentials_map(
+    aws_dir: &PathBuf,
+    verbose: bool,
+) -> std::io::Result<HashMap<String, CredentialInfo>> {
     let mut map: HashMap<String, CredentialInfo> = HashMap::new();
 
     let entries = fs::read_dir(aws_dir)?;
@@ -81,16 +142,24 @@ fn build_credentials_map(aws_dir: &PathBuf) -> std::io::Result<HashMap<String, C
         };
 
         if filename == "credentials" || filename.starts_with("credentials_") {
+            if verbose {
+                eprintln!(
+                    "{} Processing credentials file: {}",
+                    style("[verbose]").dim(),
+                    style(path.display()).cyan()
+                );
+            }
             let project = extract_project_name(filename, "credentials");
             let sections = parse_ini_file(&path, false)?;
 
             for section_name in sections.keys() {
                 // Only store if not already present (first match wins)
                 // This prioritizes default credentials file over project-specific ones
-                map.entry(section_name.clone()).or_insert_with(|| CredentialInfo {
-                    path: path.clone(),
-                    project: project.clone(),
-                });
+                map.entry(section_name.clone())
+                    .or_insert_with(|| CredentialInfo {
+                        path: path.clone(),
+                        project: project.clone(),
+                    });
             }
         }
     }
@@ -124,6 +193,11 @@ fn process_config_file(
         let profile_key = make_profile_key(section_name, &project);
         let region = section.values.get("region").cloned();
 
+        // Parse MFA-related fields
+        let mfa_serial = section.values.get("mfa_serial").cloned();
+        let source_profile = section.values.get("source_profile").cloned();
+        let role_arn = section.values.get("role_arn").cloned();
+
         // Find credentials file by raw profile name (not by project)
         let credentials_file = credentials_map.get(section_name).map(|c| c.path.clone());
 
@@ -137,14 +211,27 @@ fn process_config_file(
                 if credentials_file.is_some() {
                     p.credentials_file = credentials_file.clone();
                 }
+                // Update MFA fields
+                if mfa_serial.is_some() {
+                    p.mfa_serial = mfa_serial.clone();
+                }
+                if source_profile.is_some() {
+                    p.source_profile = source_profile.clone();
+                }
+                if role_arn.is_some() {
+                    p.role_arn = role_arn.clone();
+                }
             })
             .or_insert_with(|| {
-                Profile::new(
+                Profile::new_with_mfa(
                     section_name.clone(),
                     project.clone(),
                     region.clone(),
                     credentials_file.clone(),
                     Some(path.clone()),
+                    mfa_serial.clone(),
+                    source_profile.clone(),
+                    role_arn.clone(),
                 )
             });
     }

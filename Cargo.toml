@@ -1,5 +1,5 @@
 [package]
-name = "awsw-bin"
+name = "awsp"
 version = "0.1.0"
 edition = "2021"
 description = "AWS Profile Switcher - manage multiple AWS profiles with ease"
@@ -11,3 +11,11 @@ console = "0.15"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "awsp"
+path = "src/main.rs"

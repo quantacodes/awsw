@@ -1,18 +1,38 @@
-use crate::aws::{scan_profiles, Profile};
+use crate::aws::{scan_profiles, scan_profiles_verbose, Profile};
 use console::style;
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let profiles = scan_profiles()?;
+pub fn run(filter: Option<&str>, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let profiles = if verbose {
+        scan_profiles_verbose()?
+    } else {
+        scan_profiles()?
+    };
 
     if profiles.is_empty() {
         eprintln!("No AWS profiles found in ~/.aws/");
         return Ok(());
     }
 
+    // Apply filter if provided
+    let profiles: Vec<&Profile> = if let Some(pattern) = filter {
+        let pattern_lower = pattern.to_lowercase();
+        profiles
+            .iter()
+            .filter(|p| p.name.to_lowercase().contains(&pattern_lower))
+            .collect()
+    } else {
+        profiles.iter().collect()
+    };
+
+    if profiles.is_empty() {
+        eprintln!("No profiles matching '{}'", filter.unwrap_or(""));
+        return Ok(());
+    }
+
     let current = std::env::var("AWS_PROFILE").ok();
 
     for profile in profiles {
-        print_profile(&profile, current.as_deref());
+        print_profile(profile, current.as_deref());
     }
 
     Ok(())
