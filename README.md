@@ -18,18 +18,25 @@ Fast, ergonomic AWS profile management for the terminal.
 
 ## Installation (macOS)
 
+### Homebrew (Recommended)
+
+```bash
+brew tap quantacodes/tap
+brew install awsw
+```
+
 ### Build from source
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/awsw.git
+git clone https://github.com/quantacodes/awsw.git
 cd awsw
 
 # Build release binary
 cargo build --release
 
 # Copy to PATH
-sudo cp target/release/awsw-bin /usr/local/bin/
+sudo cp target/release/awsw /usr/local/bin/
 ```
 
 ### Shell Setup
@@ -38,17 +45,17 @@ Add to your shell config file:
 
 **Zsh** (`~/.zshrc`):
 ```bash
-eval "$(awsw-bin init zsh)"
+eval "$(awsw init zsh)"
 ```
 
 **Bash** (`~/.bashrc`):
 ```bash
-eval "$(awsw-bin init bash)"
+eval "$(awsw init bash)"
 ```
 
 **Fish** (`~/.config/fish/config.fish`):
 ```fish
-awsw-bin init fish | source
+awsw init fish | source
 ```
 
 Then reload your shell:
@@ -99,7 +106,7 @@ Switched to work/prod (Account: 123456789012) ARN: arn:aws:iam::123456789012:use
 ## TODO
 
 - [ ] Linux support
-- [ ] Homebrew formula
+- [x] Homebrew formula
 - [ ] Pre-built binaries for releases
 
 ## License
