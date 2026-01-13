@@ -1,5 +1,5 @@
 [package]
-name = "awsp"
+name = "awsw"
 version = "0.1.0"
 edition = "2021"
 description = "AWS Profile Switcher - manage multiple AWS profiles with ease"
@@ -17,5 +17,5 @@ tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "macr
 tempfile = "3"
 
 [[bin]]
-name = "awsp"
+name = "awsw"
 path = "src/main.rs"
